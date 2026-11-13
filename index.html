@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>곰 머리 오르기</title>
+<style>
+  :root{--bg:#0b0f14;--panel:rgba(11,15,20,.86);--line:#1e293b;--text:#e2e8f0;--dim:#64748b;--accent:#7dd3fc;--ok:#86efac;--warn:#fbbf24}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);overflow:hidden;
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  #c{display:block;width:100%;height:100%;touch-action:none}
+  .panel{position:fixed;background:var(--panel);border:1px solid var(--line);border-radius:12px;
+    padding:10px 12px;font-size:12.5px;line-height:1.6;backdrop-filter:blur(6px)}
+  #hud{left:12px;top:12px;max-width:min(300px,calc(100vw - 24px))}
+  #hud h1{margin:0 0 2px;font-size:14px;color:var(--accent);font-weight:600}
+  #hud .dim{color:var(--dim)}
+  #time{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+  #load{color:var(--warn)}
+  #ctl{right:12px;top:12px;text-align:right}
+  button{background:#1e293b;color:var(--text);border:1px solid #334155;border-radius:8px;
+    padding:6px 10px;font-size:12px;cursor:pointer;margin:2px}
+  button:hover{background:#334155} button.on{background:#0369a1;border-color:#0ea5e9}
+  a{color:var(--accent)}
+  #win{position:fixed;inset:0;display:none;align-items:center;justify-content:center;pointer-events:none}
+  #win.show{display:flex}
+  #win .box{pointer-events:auto;text-align:center;background:var(--panel);border:1px solid #0ea5e9;
+    border-radius:16px;padding:18px 26px}
+  #win h2{margin:0 0 6px;color:var(--ok);font-size:22px}
+  /* 폰 조작 */
+  #stick{position:fixed;left:24px;bottom:28px;width:120px;height:120px;border-radius:50%;
+    background:rgba(30,41,59,.55);border:1px solid #334155;display:none;touch-action:none}
+  #knob{position:absolute;left:40px;top:40px;width:40px;height:40px;border-radius:50%;background:#7dd3fc;opacity:.85}
+  #jump{position:fixed;right:28px;bottom:40px;width:84px;height:84px;border-radius:50%;
+    font-size:15px;font-weight:700;display:none;background:rgba(3,105,161,.8);border-color:#0ea5e9}
+  body.touch #stick, body.touch #jump{display:block}
+  body.touch #keys{display:none}
+  @media (max-width:600px){ #ctl{top:auto;bottom:auto;top:12px} #hud{font-size:11.5px;max-width:200px} }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div class="panel" id="hud">
+  <h1>곰 머리 오르기</h1>
+  <div class="dim">발판을 밟고 올라가 곰 머리 꼭대기에 서세요</div>
+  <div id="time">0.0초</div>
+  <div id="best" class="dim">최고 기록 없음</div>
+  <div id="load">장면 불러오는 중…</div>
+  <div id="keys" class="dim">이동 WASD·방향키 · 점프 스페이스 · 다시 R · 시점 마우스 끌기</div>
+</div>
+
+<div class="panel" id="ctl">
+  <div><button id="reset">처음부터</button><button id="debug">충돌체 보기</button></div>
+  <div><a href="https://basco-git.github.io/open-space/">3D 뷰어</a></div>
+</div>
+
+<div id="win"><div class="box">
+  <h2>꼭대기 도착!</h2>
+  <div id="winTime" style="font-size:18px"></div>
+  <div id="winBest" class="dim" style="margin:4px 0 10px"></div>
+  <button id="again">다시 하기</button>
+</div></div>
+
+<div id="stick"><div id="knob"></div></div>
+<button id="jump">점프</button>
+
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+  "@sparkjsdev/spark":"https://sparkjs.dev/releases/spark/2.4.0/spark.module.js"
+}}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import * as SPARK from "@sparkjsdev/spark";
+
+const el = id => document.getElementById(id);
+if (matchMedia("(pointer: coarse)").matches) document.body.classList.add("touch");
+
+/* ---------- 장면 ---------- */
+const canvas = el("c");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0f14);
+scene.add(new THREE.HemisphereLight(0xffffff, 0x334155, 2.2));
+const sun = new THREE.DirectionalLight(0xffffff, 1.6); sun.position.set(1, 2, 1.5); scene.add(sun);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.005, 50);
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true; controls.enablePan = false;
+controls.minDistance = 0.25; controls.maxDistance = 2.5;
+controls.maxPolarAngle = Math.PI * 0.62;
+scene.add(new SPARK.SparkRenderer({ renderer }));   // 없으면 알갱이가 안 그려진다
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight, false);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize); resize();
+
+/* ---------- 충돌체 (scene.sog 의 점에서 잰 치수, 탁자 면 y=0, 피규어 축 = 원점) ---------- */
+const TABLE = { r: 0.9, top: 0 };
+const CYLS = [                                  // 원기둥: 반경, 아래, 위
+  { name: "받침대", r: 0.45, bottom: -0.02, top: 0.28 },
+  { name: "몸통",   r: 0.17, bottom: 0.28,  top: 0.55 },
+];
+const HEAD = { c: new THREE.Vector3(0.0, 0.70, -0.05), r: 0.27 };
+const GOAL_Y = 0.90;                             // 머리 위 이 높이 넘게 서면 성공
+
+// 나선 발판: 받침대 바깥에서 시작해 머리를 감아 돈다. 한 칸 0.09 높아지고 34° 돈다.
+// 첫 칸은 받침대 밖(반경 0.55)에 두어, 받침대 위에서 점프할 때 발판 아래에 머리를 박지 않게 한다.
+const PLAT_SIZE = { w: 0.15, h: 0.02, d: 0.15 };
+const PLATS = [{ x: 0, z: 0.64, top: 0.14 }];   // 탁자 → 받침대 사이 디딤돌
+for (let k = 0; k < 6; k++) {
+  const a = THREE.MathUtils.degToRad(40 + 34 * k), r = 0.55 - 0.025 * k;
+  PLATS.push({ x: Math.sin(a) * r, z: Math.cos(a) * r, top: 0.44 + 0.09 * k });
+}
+
+/* ---------- 발판·충돌체 그리기 ---------- */
+const platMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, emissive: 0x0c4a6e, roughness: .4, transparent: true, opacity: .88 });
+PLATS.forEach((p, i) => {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(PLAT_SIZE.w, PLAT_SIZE.h, PLAT_SIZE.d), platMat);
+  m.position.set(p.x, p.top - PLAT_SIZE.h / 2, p.z);
+  m.rotation.y = Math.atan2(p.x, p.z);
+  p.rotY = m.rotation.y;
+  scene.add(m);
+});
+// 목표 표시: 머리 위에서 도는 별
+const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.035), new THREE.MeshStandardMaterial({ color: 0xfacc15, emissive: 0xa16207 }));
+star.position.set(HEAD.c.x, HEAD.c.y + HEAD.r + 0.09, HEAD.c.z); scene.add(star);
+
+const debugGroup = new THREE.Group(); debugGroup.visible = false; scene.add(debugGroup);
+const wire = new THREE.MeshBasicMaterial({ color: 0xf472b6, wireframe: true, transparent: true, opacity: .5 });
+CYLS.forEach(c => { const m = new THREE.Mesh(new THREE.CylinderGeometry(c.r, c.r, c.top - c.bottom, 24, 1, true), wire); m.position.y = (c.top + c.bottom) / 2; debugGroup.add(m); });
+{ const m = new THREE.Mesh(new THREE.SphereGeometry(HEAD.r, 20, 14), wire); m.position.copy(HEAD.c); debugGroup.add(m); }
+{ const m = new THREE.Mesh(new THREE.CircleGeometry(TABLE.r, 40), wire); m.rotation.x = -Math.PI / 2; debugGroup.add(m); }
+
+/* ---------- 캐릭터: 둥근 몸에 고글을 쓴 작은 탐험가 ---------- */
+const CR = 0.03, CH = 0.10;                     // 충돌 반경, 키
+const hero = new THREE.Group(); scene.add(hero);
+const body = new THREE.Group(); hero.add(body);
+const mat = (c, e = 0) => new THREE.MeshStandardMaterial({ color: c, emissive: e, roughness: .55 });
+const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.026, 0.03, 6, 14), mat(0xf97316)); torso.position.y = 0.045; body.add(torso);
+const headM = new THREE.Mesh(new THREE.SphereGeometry(0.027, 18, 14), mat(0xfde68a)); headM.position.y = 0.087; body.add(headM);
+const band = new THREE.Mesh(new THREE.TorusGeometry(0.026, 0.005, 8, 20), mat(0x1e293b)); band.position.y = 0.09; band.rotation.x = Math.PI / 2; body.add(band);
+for (const s of [-1, 1]) {
+  const g = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.006, 14), mat(0x38bdf8, 0x075985));
+  g.rotation.x = Math.PI / 2; g.position.set(s * 0.011, 0.091, 0.026); body.add(g);
+  const foot = new THREE.Mesh(new THREE.SphereGeometry(0.011, 10, 8), mat(0x334155));
+  foot.scale.set(1, .6, 1.4); foot.position.set(s * 0.013, 0.006, 0.004); body.add(foot);
+}
+const pack = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.035, 0.015), mat(0x16a34a)); pack.position.set(0, 0.05, -0.027); body.add(pack);
+// 발밑 그림자: 높이 감을 잡는 데 꼭 필요하다
+const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.03, 20), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: .45, depthWrite: false }));
+shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
+
+/* ---------- 물리 ---------- */
+const G = 2.6, JUMP_V = 0.98, SPEED = 0.62, AIR = 0.8;    // 점프 높이 ≈ v²/2g ≈ 0.18
+const START = new THREE.Vector3(0, 0, 0.78);
+const LOOK_UP = 0.22;                            // 카메라는 캐릭터보다 이만큼 위를 본다 (오르는 게임이라 위쪽이 보이게)
+const pos = START.clone(), vel = new THREE.Vector3();
+let grounded = false, onHead = false, facing = Math.PI, coyote = 0, jumpBuf = 0;
+
+// (x,z) 위치, 발 높이 y 에서 발밑에 있는 가장 높은 윗면
+function groundBelow(x, z, y) {
+  let best = -Infinity;
+  const rr = Math.hypot(x, z);
+  if (rr < TABLE.r) best = TABLE.top;
+  for (const c of CYLS) if (rr < c.r && c.top <= y + 1e-4 && c.top > best) best = c.top;
+  for (const p of PLATS) {
+    const dx = x - p.x, dz = z - p.z, s = Math.sin(-p.rotY), co = Math.cos(-p.rotY);
+    const lx = dx * co - dz * s, lz = dx * s + dz * co;
+    if (Math.abs(lx) < PLAT_SIZE.w / 2 + CR * .5 && Math.abs(lz) < PLAT_SIZE.d / 2 + CR * .5 && p.top <= y + 1e-4 && p.top > best) best = p.top;
+  }
+  // 머리 윗면
+  const hx = x - HEAD.c.x, hz = z - HEAD.c.z, hr2 = HEAD.r * HEAD.r - (hx * hx + hz * hz);
+  if (hr2 > 0) { const ht = HEAD.c.y + Math.sqrt(hr2); if (ht <= y + 0.02 && ht > best) best = ht; }
+  return best;
+}
+
+function collide(prevY) {
+  grounded = false; onHead = false;
+  const rr = Math.hypot(pos.x, pos.z);
+  // 원기둥 옆면 밀어내기 (발이 윗면보다 아래에 있을 때)
+  for (const c of CYLS) {
+    if (pos.y < c.top - 0.005 && pos.y + CH > c.bottom && rr < c.r + CR) {
+      const k = (c.r + CR) / Math.max(rr, 1e-5); pos.x *= k; pos.z *= k;
+    }
+  }
+  // 발판 옆면·아랫면
+  for (const p of PLATS) {
+    const dx = pos.x - p.x, dz = pos.z - p.z, s = Math.sin(-p.rotY), co = Math.cos(-p.rotY);
+    const lx = dx * co - dz * s, lz = dx * s + dz * co;
+    const hw = PLAT_SIZE.w / 2 + CR, hd = PLAT_SIZE.d / 2 + CR, bot = p.top - PLAT_SIZE.h;
+    if (Math.abs(lx) < hw && Math.abs(lz) < hd && pos.y < p.top - 0.004 && pos.y + CH > bot) {
+      if (vel.y > 0 && prevY + CH <= bot + 0.004) { pos.y = bot - CH; vel.y = 0; continue; }   // 머리 박음
+      const px = hw - Math.abs(lx), pz = hd - Math.abs(lz);                                       // 옆으로 밀기
+      let nlx = lx, nlz = lz;
+      if (px < pz) nlx = Math.sign(lx) * hw; else nlz = Math.sign(lz) * hd;
+      const s2 = Math.sin(p.rotY), c2 = Math.cos(p.rotY);
+      pos.x = p.x + nlx * c2 - nlz * s2; pos.z = p.z + nlx * s2 + nlz * c2;
+    }
+  }
+  // 머리(구): 몸 중심 구로 밀어내기
+  const cs = new THREE.Vector3(pos.x, pos.y + CR, pos.z), d = cs.clone().sub(HEAD.c), dl = d.length();
+  if (dl < HEAD.r + CR) {
+    const n = d.divideScalar(dl || 1);
+    cs.copy(HEAD.c).addScaledVector(n, HEAD.r + CR);
+    pos.set(cs.x, cs.y - CR, cs.z);
+    if (n.y > 0.55) { if (vel.y < 0) vel.y = 0; grounded = true; onHead = true; }
+    else if (n.y < -0.3 && vel.y > 0) vel.y = 0;
+  }
+  // 윗면에 내려앉기
+  if (vel.y <= 0) {
+    const g = groundBelow(pos.x, pos.z, prevY + 0.002);
+    if (g > -Infinity && pos.y <= g) { pos.y = g; vel.y = 0; grounded = true; }
+  }
+}
+
+/* ---------- 입력 ---------- */
+const keys = new Set();
+addEventListener("keydown", e => {
+  keys.add(e.code);
+  if (e.code === "Space") { jumpBuf = 0.12; e.preventDefault(); }
+  if (e.code === "KeyR") respawn(true);
+});
+addEventListener("keyup", e => keys.delete(e.code));
+const stick = { x: 0, y: 0, id: null };
+const stickEl = el("stick"), knob = el("knob");
+stickEl.addEventListener("pointerdown", e => { stick.id = e.pointerId; stickEl.setPointerCapture(e.pointerId); moveStick(e); e.stopPropagation(); });
+stickEl.addEventListener("pointermove", e => { if (e.pointerId === stick.id) moveStick(e); });
+const endStick = e => { if (e.pointerId !== stick.id) return; stick.id = null; stick.x = stick.y = 0; knob.style.transform = ""; };
+stickEl.addEventListener("pointerup", endStick); stickEl.addEventListener("pointercancel", endStick);
+function moveStick(e) {
+  const r = stickEl.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  let dx = (e.clientX - cx) / 45, dy = (e.clientY - cy) / 45; const l = Math.hypot(dx, dy);
+  if (l > 1) { dx /= l; dy /= l; }
+  stick.x = dx; stick.y = dy; knob.style.transform = `translate(${dx * 40}px, ${dy * 40}px)`;
+}
+el("jump").addEventListener("pointerdown", e => { jumpBuf = 0.12; e.stopPropagation(); e.preventDefault(); });
+
+/* ---------- 게임 상태 ---------- */
+let t0 = null, done = false, best = null;
+try { best = parseFloat(localStorage.getItem("bear-climb-best")) || null; if (best !== null && best < 1) best = null; } catch (e) {}
+const showBest = () => el("best").textContent = best ? `최고 기록 ${best.toFixed(1)}초` : "최고 기록 없음";
+showBest();
+function respawn(full) {
+  pos.copy(START); vel.set(0, 0, 0); facing = Math.PI;
+  if (full) { t0 = null; done = false; el("win").classList.remove("show"); el("time").textContent = "0.0초"; }
+}
+el("reset").onclick = () => respawn(true);
+el("again").onclick = () => respawn(true);
+el("debug").onclick = e => { debugGroup.visible = !debugGroup.visible; e.target.classList.toggle("on", debugGroup.visible); };
+
+/* ---------- 장면 파일 ---------- */
+let ready = false;
+(async () => {
+  try {
+    const t = performance.now();
+    const res = await fetch("scene.sog");
+    if (!res.ok) throw new Error(`서버 응답 ${res.status}`);
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    const splat = new SPARK.SplatMesh({ fileBytes: bytes, fileType: "pcsogszip" });   // .sog 의 Spark 안쪽 이름
+    await splat.initialized;
+    scene.add(splat);
+    el("load").textContent = `장면 ${(bytes.byteLength / 1e6).toFixed(1)}MB · ${((performance.now() - t) / 1000).toFixed(1)}초`;
+    el("load").style.color = "var(--dim)";
+  } catch (e) { el("load").textContent = "장면을 못 불러왔습니다: " + e.message; }
+  ready = true;
+})();
+
+// 첫 화면: 캐릭터 뒤 조금 높은 곳에서 곰 머리(목표)까지 한눈에 보이게
+camera.position.set(0.0, 0.62, 2.3);
+controls.target.set(0, LOOK_UP, 0.78);
+
+/* ---------- 루프 ---------- */
+const clock = new THREE.Clock();
+const fwd = new THREE.Vector3(), right = new THREE.Vector3(), wish = new THREE.Vector3();
+function step(dt) {
+  // 카메라 기준 이동 방향
+  camera.getWorldDirection(fwd); fwd.y = 0; fwd.normalize();
+  right.crossVectors(fwd, camera.up).normalize();
+  let ix = 0, iz = 0;
+  if (keys.has("KeyW") || keys.has("ArrowUp")) iz += 1;
+  if (keys.has("KeyS") || keys.has("ArrowDown")) iz -= 1;
+  if (keys.has("KeyD") || keys.has("ArrowRight")) ix += 1;
+  if (keys.has("KeyA") || keys.has("ArrowLeft")) ix -= 1;
+  ix += stick.x; iz -= stick.y;
+  wish.set(0, 0, 0).addScaledVector(fwd, iz).addScaledVector(right, ix);
+  if (wish.lengthSq() > 1) wish.normalize();
+
+  const ctrl = grounded ? 1 : AIR;
+  const k = 1 - Math.exp(-(grounded ? 18 : 6) * dt);
+  vel.x += (wish.x * SPEED - vel.x) * k * ctrl;
+  vel.z += (wish.z * SPEED - vel.z) * k * ctrl;
+  if (wish.lengthSq() > 0.01) facing = Math.atan2(wish.x, wish.z);
+
+  coyote = grounded ? 0.1 : Math.max(0, coyote - dt);
+  jumpBuf = Math.max(0, jumpBuf - dt);
+  if (jumpBuf > 0 && coyote > 0) { vel.y = JUMP_V; coyote = 0; jumpBuf = 0; grounded = false; }
+
+  if (t0 === null && (wish.lengthSq() > 0.01 || vel.y > 0)) t0 = performance.now();
+
+  vel.y -= G * dt;
+  const prevY = pos.y;
+  pos.addScaledVector(vel, dt);
+  collide(prevY);
+
+  if (pos.y < -0.6) respawn(false);              // 탁자 밖으로 떨어짐
+
+  if (!done && onHead && pos.y > GOAL_Y) {
+    done = true;
+    const sec = (performance.now() - t0) / 1000;
+    const isBest = sec >= 1 && (!best || sec < best);   // 1초 미만은 시험·오류로 보고 저장하지 않음
+    if (isBest) { best = sec; try { localStorage.setItem("bear-climb-best", String(sec)); } catch (e) {} showBest(); }
+    el("winTime").textContent = `${sec.toFixed(1)}초`;
+    el("winBest").textContent = isBest ? "새 최고 기록!" : `최고 기록 ${best.toFixed(1)}초`;
+    el("win").classList.add("show");
+  }
+}
+
+(function loop() {
+  requestAnimationFrame(loop);
+  const dt = Math.min(clock.getDelta(), 1 / 30);
+  if (ready && !done) for (let i = 0; i < 2; i++) step(dt / 2);
+  if (!done && t0 !== null) el("time").textContent = `${((performance.now() - t0) / 1000).toFixed(1)}초`;
+
+  // 캐릭터 모습
+  hero.position.copy(pos);
+  hero.rotation.y += ((facing - hero.rotation.y + Math.PI * 3) % (Math.PI * 2) - Math.PI) * 0.25;
+  const moving = Math.hypot(vel.x, vel.z) > 0.05 && grounded;
+  const tt = performance.now() / 1000;
+  body.position.y = moving ? Math.abs(Math.sin(tt * 14)) * 0.006 : 0;
+  body.scale.set(1, grounded ? 1 : 1.08, 1);
+  const g = groundBelow(pos.x, pos.z, pos.y + 0.001);
+  shadow.visible = g > -Infinity;
+  if (shadow.visible) { shadow.position.set(pos.x, g + 0.002, pos.z); const s = Math.max(.3, 1 - (pos.y - g) * 3); shadow.scale.setScalar(s); }
+  star.rotation.y = tt * 1.5; star.position.y = HEAD.c.y + HEAD.r + 0.09 + Math.sin(tt * 2) * 0.01;
+
+  // 카메라가 캐릭터를 따라감 (보는 각도는 그대로)
+  const tgt = new THREE.Vector3(pos.x, pos.y + LOOK_UP, pos.z);
+  const delta = tgt.sub(controls.target).multiplyScalar(0.12);
+  controls.target.add(delta); camera.position.add(delta);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+
+// 시험용: 입력(ix 오른쪽, iz 앞)을 넣고 dt 만큼 물리만 진행 (화면 갱신과 무관)
+function simulate(sec, input = {}, dt = 1 / 120) {
+  const save = { x: stick.x, y: stick.y };
+  stick.x = input.x || 0; stick.y = -(input.z || 0);
+  if (input.jump) jumpBuf = 0.12;
+  for (let t = 0; t < sec; t += dt) step(dt);
+  stick.x = save.x; stick.y = save.y;
+}
+window.game = { pos, vel, PLATS, HEAD, CYLS, respawn, simulate, camera, controls,
+  get grounded() { return grounded; }, get onHead() { return onHead; }, get done() { return done; } };
+</script>
+</body>
+</html>
