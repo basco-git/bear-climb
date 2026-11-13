@@ -110,13 +110,13 @@ const CYLS = [                                  // 원기둥: 반경, 아래, �
 const HEAD = { c: new THREE.Vector3(0.0, 0.70, -0.05), r: 0.27 };
 const GOAL_Y = 0.90;                             // 머리 위 이 높이 넘게 서면 성공
 
-// 나선 발판: 받침대 바깥에서 시작해 머리를 감아 돈다. 한 칸 0.09 높아지고 34° 돈다.
-// 첫 칸은 받침대 밖(반경 0.55)에 두어, 받침대 위에서 점프할 때 발판 아래에 머리를 박지 않게 한다.
+// 나선 발판: 받침대 바깥에서 시작해 머리를 감아 돈다. 한 칸 0.085 높아지고 34° 돈다.
+// 첫 칸은 받침대 밖(반경 0.60, 안쪽 가장자리 0.525)에 두어, 받침대 위에서 점프할 때 발판 아래에 머리를 박지 않게 한다.
 const PLAT_SIZE = { w: 0.15, h: 0.02, d: 0.15 };
 const PLATS = [{ x: 0, z: 0.64, top: 0.14 }];   // 탁자 → 받침대 사이 디딤돌
 for (let k = 0; k < 6; k++) {
-  const a = THREE.MathUtils.degToRad(40 + 34 * k), r = 0.55 - 0.025 * k;
-  PLATS.push({ x: Math.sin(a) * r, z: Math.cos(a) * r, top: 0.44 + 0.09 * k });
+  const a = THREE.MathUtils.degToRad(40 + 34 * k), r = 0.60 - 0.03 * k;
+  PLATS.push({ x: Math.sin(a) * r, z: Math.cos(a) * r, top: 0.40 + 0.085 * k });
 }
 
 /* ---------- 발판·충돌체 그리기 ---------- */
@@ -158,7 +158,7 @@ const shadow = new THREE.Mesh(new THREE.CircleGeometry(0.03, 20), new THREE.Mesh
 shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
 
 /* ---------- 물리 ---------- */
-const G = 2.6, JUMP_V = 0.98, SPEED = 0.62, AIR = 0.8;    // 점프 높이 ≈ v²/2g ≈ 0.18
+const G = 2.6, JUMP_V = 1.07, SPEED = 0.62, AIR = 0.8;    // 점프 높이 ≈ v²/2g ≈ 0.22
 const START = new THREE.Vector3(0, 0, 0.78);
 const LOOK_UP = 0.22;                            // 카메라는 캐릭터보다 이만큼 위를 본다 (오르는 게임이라 위쪽이 보이게)
 const pos = START.clone(), vel = new THREE.Vector3();
@@ -317,7 +317,7 @@ function step(dt) {
     const isBest = sec >= 1 && (!best || sec < best);   // 1초 미만은 시험·오류로 보고 저장하지 않음
     if (isBest) { best = sec; try { localStorage.setItem("bear-climb-best", String(sec)); } catch (e) {} showBest(); }
     el("winTime").textContent = `${sec.toFixed(1)}초`;
-    el("winBest").textContent = isBest ? "새 최고 기록!" : `최고 기록 ${best.toFixed(1)}초`;
+    el("winBest").textContent = isBest ? "새 최고 기록!" : (best ? `최고 기록 ${best.toFixed(1)}초` : "");
     el("win").classList.add("show");
   }
 }
